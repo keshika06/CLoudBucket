@@ -14,9 +14,11 @@ func probeGCS(bucketName string) *Finding {
 
 	resp, err := httpClient.Get(url)
 	if err != nil {
+                
 		return nil
 	}
 	defer resp.Body.Close()
+        
 
 	switch resp.StatusCode {
 	case 404:
