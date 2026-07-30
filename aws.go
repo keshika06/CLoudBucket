@@ -47,18 +47,37 @@ func probeAWS(bucketName string) *Finding {
                 Reason:     "Bucket exists in a different AWS region — public/private status not yet checked",
              }
 
+	
 	case 200:
-		// Public listing succeeded — bucket exists and is publicly readable.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		keys := extractS3Keys(string(body))
-		return &Finding{
+        keys := extractS3Keys(string(body))
+
+        risk := classifyRisk(keys)
+        reason := "Bucket listing is publicly accessible"
+
+    // Try downloading a couple of promising-looking files and scanning
+    // their actual contents — this is what upgrades a filename-based
+    // guess into a confirmed credential leak.
+        for _, k := range keys {
+            if !candidateForContentScan(k) {
+                continue
+           }
+           fileURL := fmt.Sprintf("https://s3.amazonaws.com/%s/%s", bucketName, k)
+           if match := downloadAndScan(fileURL); match != "" {
+               risk = "Critical"
+               reason = fmt.Sprintf("Confirmed credential leak in %s: %s", k, match)
+               break // one confirmed hit is enough — stop scanning further files
+            }
+       }
+
+        return &Finding{
 			BucketName: bucketName,
-			Provider:   "aws_s3",
-			Status:     "public_read",
-			Risk:       classifyRisk(keys),
-			Reason:     "Bucket listing is publicly accessible",
-			SampleKeys: keys,
-		}
+            Provider:   "aws_s3",
+            Status:     "public_read",
+            Risk:       risk,
+            Reason:     reason,
+            SampleKeys: keys,
+       }
 
 	case 403:
 		// Bucket exists but access is denied — it's private. Still worth

@@ -25,16 +25,34 @@ func probeGCS(bucketName string) *Finding {
 		return nil // bucket doesn't exist
 
 	case 200:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		keys := extractGCSKeys(body)
-		return &Finding{
-			BucketName: bucketName,
-			Provider:   "gcs",
-			Status:     "public_read",
-			Risk:       classifyRisk(keys),
-			Reason:     "Bucket listing is publicly accessible",
-			SampleKeys: keys,
-		}
+    body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+    keys := extractGCSKeys(body)
+
+    risk := classifyRisk(keys)
+    reason := "Bucket listing is publicly accessible"
+
+    for _, k := range keys {
+    
+    if !candidateForContentScan(k) {
+        continue
+    }
+    fileURL := fmt.Sprintf("https://storage.googleapis.com/%s/%s", bucketName, k)
+   
+    if match := downloadAndScan(fileURL); match != "" {
+        risk = "Critical"
+        reason = fmt.Sprintf("Confirmed credential leak in %s: %s", k, match)
+        break
+    }
+}
+
+    return &Finding{
+        BucketName: bucketName,
+        Provider:   "gcs",
+        Status:     "public_read",
+        Risk:       risk,
+        Reason:     reason,
+        SampleKeys: keys,
+    }
 
 	case 403:
 		return &Finding{
