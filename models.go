@@ -18,6 +18,7 @@ type Report struct {
 	ScanDuration float64   `json:"scan_duration_seconds"`
 	Timestamp    time.Time `json:"timestamp"`
 	Findings     []Finding `json:"findings"`
+	TakeoverFindings []TakeoverFinding `json:"takeover_findings,omitempty"`
 	Summary      Summary   `json:"summary"`
 }
 

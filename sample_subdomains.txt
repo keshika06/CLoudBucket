@@ -1,0 +1,10 @@
+assets
+cdn
+static
+media
+www
+dev
+app
+files
+storage
+img

@@ -13,10 +13,11 @@ func main() {
 	domain := flag.String("domain", "", "target company name or domain, e.g. acmecorp.com")
 	outputPath := flag.String("output", "", "write JSON report to this file instead of stdout")
 	threads := flag.Int("threads", 30, "number of concurrent probe workers")
+	subdomainFile := flag.String("subdomains", "", "path to a file with one subdomain prefix per line, for takeover detection")
 	flag.Parse()
 
 	if *domain == "" {
-		fmt.Println("usage: cloudbucket -domain acmecorp.com [-output report.json] [-threads 30]")
+		fmt.Println("usage: cloudbucket -domain acmecorp.com [-output report.json] [-threads 30] [-subdomains subdomains.txt]")
 		os.Exit(1)
 	}
 
@@ -25,16 +26,24 @@ func main() {
 	candidates := GeneratePermutations(*domain)
 	findings := runScan(candidates, *threads)
 
+	var takeoverFindings []TakeoverFinding
+	if *subdomainFile != "" {
+		prefixes, err := loadSubdomainPrefixes(*subdomainFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "warning: could not read subdomain file:", err)
+		} else {
+			takeoverFindings = checkTakeovers(*domain, prefixes)
+		}
+	}
+
 	report := buildReport(*domain, findings, len(candidates), time.Since(start))
+	report.TakeoverFindings = takeoverFindings
 
 	writeReport(report, *outputPath)
 }
 
-// runScan fans candidate bucket names out to a worker pool and collects
-// findings. Right now probeBucket is a stub — this is where AWS/GCS/Azure
-// SDK calls plug in next (see aws.go once it exists).
 func runScan(candidates []string, workers int) []Finding {
-	jobs := make(chan job, len(candidates)*3) // x3: one job per cloud provider
+	jobs := make(chan job, len(candidates)*3)
 	results := make(chan *Finding, len(candidates)*3)
 
 	var wg sync.WaitGroup
@@ -70,10 +79,6 @@ func runScan(candidates []string, workers int) []Finding {
 	return findings
 }
 
-// probeBucket is the per-provider dispatch point. This is intentionally a
-// stub right now — swap in real SDK calls (see aws.go / gcs.go / azure.go
-// as you build them) behind the same job -> *Finding signature so main.go
-// and the worker pool never need to change.
 func probeBucket(j job) *Finding {
 	switch j.provider {
 	case "aws_s3":
