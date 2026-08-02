@@ -26,16 +26,32 @@ func probeAzure(bucketName string) *Finding {
 		return nil // account or container doesn't exist
 
 	case 200:
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
-		keys := extractAzureKeys(body)
-		return &Finding{
-			BucketName: bucketName,
-			Provider:   "azure_blob",
-			Status:     "public_read",
-			Risk:       classifyRisk(keys),
-			Reason:     "Container listing is publicly accessible",
-			SampleKeys: keys,
-		}
+    body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+    keys := extractAzureKeys(body)
+
+    risk := classifyRisk(keys)
+    reason := "Container listing is publicly accessible"
+
+    for _, k := range keys {
+        if !candidateForContentScan(k) {
+            continue
+        }
+        fileURL := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", bucketName, bucketName, k)
+        if match := downloadAndScan(fileURL); match != "" {
+            risk = "Critical"
+            reason = fmt.Sprintf("Confirmed credential leak in %s: %s", k, match)
+            break
+        }
+    }
+
+    return &Finding{
+        BucketName: bucketName,
+        Provider:   "azure_blob",
+        Status:     "public_read",
+        Risk:       risk,
+        Reason:     reason,
+        SampleKeys: keys,
+    }
 
 	case 403:
 		return &Finding{
